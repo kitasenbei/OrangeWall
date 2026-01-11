@@ -16,6 +16,7 @@ ROUTINES_TABLE = os.getenv("ROUTINES_TABLE", "orangewall-dev-routines")
 SCHEDULE_BLOCKS_TABLE = os.getenv("SCHEDULE_BLOCKS_TABLE", "orangewall-dev-schedule_blocks")
 CONTACTS_TABLE = os.getenv("CONTACTS_TABLE", "orangewall-dev-contacts")
 USER_PREFERENCES_TABLE = os.getenv("USER_PREFERENCES_TABLE", "orangewall-dev-user_preferences")
+RECIPES_TABLE = os.getenv("RECIPES_TABLE", "orangewall-dev-recipes")
 
 dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
 
@@ -32,3 +33,4 @@ routines_table = dynamodb.Table(ROUTINES_TABLE)
 schedule_blocks_table = dynamodb.Table(SCHEDULE_BLOCKS_TABLE)
 contacts_table = dynamodb.Table(CONTACTS_TABLE)
 user_preferences_table = dynamodb.Table(USER_PREFERENCES_TABLE)
+recipes_table = dynamodb.Table(RECIPES_TABLE)

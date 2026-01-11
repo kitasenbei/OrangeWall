@@ -16,6 +16,7 @@ import {
   Fish,
   Cake,
   Coffee,
+  Loader2,
   type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -45,23 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-
-interface Recipe {
-  id: string
-  title: string
-  description: string
-  category: string
-  prepTime: number
-  cookTime: number
-  servings: number
-  difficulty: "easy" | "medium" | "hard"
-  ingredients: string[]
-  instructions: string[]
-  tags: string[]
-  isFavorite: boolean
-  rating?: number
-  createdAt: Date
-}
+import { useRecipes, type Recipe } from "@/hooks"
 
 const categories: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "breakfast", label: "Breakfast", icon: Coffee },
@@ -80,82 +65,15 @@ const difficultyColors = {
   hard: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 }
 
-function generateMockRecipes(): Recipe[] {
-  return [
-    {
-      id: "1",
-      title: "Classic Pancakes",
-      description: "Fluffy buttermilk pancakes perfect for breakfast",
-      category: "breakfast",
-      prepTime: 10,
-      cookTime: 15,
-      servings: 4,
-      difficulty: "easy",
-      ingredients: ["2 cups flour", "2 eggs", "1.5 cups milk", "2 tbsp sugar", "1 tsp baking powder", "Butter for cooking"],
-      instructions: ["Mix dry ingredients", "Add wet ingredients", "Cook on griddle until bubbles form", "Flip and cook until golden"],
-      tags: ["breakfast", "quick", "family"],
-      isFavorite: true,
-      rating: 5,
-      createdAt: new Date(2024, 0, 1),
-    },
-    {
-      id: "2",
-      title: "Grilled Salmon",
-      description: "Perfectly seasoned grilled salmon with lemon",
-      category: "seafood",
-      prepTime: 15,
-      cookTime: 12,
-      servings: 2,
-      difficulty: "medium",
-      ingredients: ["2 salmon fillets", "Olive oil", "Lemon", "Garlic", "Dill", "Salt & pepper"],
-      instructions: ["Season salmon", "Heat grill to medium-high", "Grill 5-6 min per side", "Serve with lemon"],
-      tags: ["healthy", "protein", "dinner"],
-      isFavorite: true,
-      rating: 4,
-      createdAt: new Date(2024, 0, 5),
-    },
-    {
-      id: "3",
-      title: "Chocolate Lava Cake",
-      description: "Decadent chocolate cake with molten center",
-      category: "dessert",
-      prepTime: 20,
-      cookTime: 14,
-      servings: 4,
-      difficulty: "hard",
-      ingredients: ["Dark chocolate", "Butter", "Eggs", "Sugar", "Flour", "Vanilla"],
-      instructions: ["Melt chocolate and butter", "Whisk eggs and sugar", "Combine and add flour", "Bake at 425°F for 14 min"],
-      tags: ["chocolate", "indulgent", "date-night"],
-      isFavorite: false,
-      rating: 5,
-      createdAt: new Date(2024, 0, 10),
-    },
-    {
-      id: "4",
-      title: "Caesar Salad",
-      description: "Classic Caesar with homemade dressing",
-      category: "lunch",
-      prepTime: 15,
-      cookTime: 0,
-      servings: 2,
-      difficulty: "easy",
-      ingredients: ["Romaine lettuce", "Parmesan", "Croutons", "Caesar dressing", "Lemon juice"],
-      instructions: ["Wash and chop lettuce", "Make dressing", "Toss together", "Top with croutons and cheese"],
-      tags: ["salad", "quick", "healthy"],
-      isFavorite: false,
-      createdAt: new Date(2024, 0, 12),
-    },
-  ]
-}
-
 export function RecipesPage() {
-  const [recipes, setRecipes] = useState<Recipe[]>(generateMockRecipes)
+  const { recipes, loading, createRecipe, updateRecipe, deleteRecipe, toggleFavorite } = useRecipes()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null)
   const [viewingRecipe, setViewingRecipe] = useState<Recipe | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [filterCategory, setFilterCategory] = useState<string | null>(null)
   const [filterDifficulty, setFilterDifficulty] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   const [formData, setFormData] = useState({
     title: "",
@@ -200,7 +118,7 @@ export function RecipesPage() {
     total: recipes.length,
     favorites: recipes.filter((r) => r.isFavorite).length,
     categories: new Set(recipes.map((r) => r.category)).size,
-    avgTime: Math.round(recipes.reduce((acc, r) => acc + r.prepTime + r.cookTime, 0) / recipes.length),
+    avgTime: recipes.length ? Math.round(recipes.reduce((acc, r) => acc + r.prepTime + r.cookTime, 0) / recipes.length) : 0,
   }), [recipes])
 
   const handleOpenAdd = () => {
@@ -237,50 +155,57 @@ export function RecipesPage() {
     setIsDialogOpen(true)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.title.trim()) return
 
-    const recipeData = {
-      title: formData.title,
-      description: formData.description,
-      category: formData.category,
-      prepTime: parseInt(formData.prepTime) || 0,
-      cookTime: parseInt(formData.cookTime) || 0,
-      servings: parseInt(formData.servings) || 4,
-      difficulty: formData.difficulty,
-      ingredients: formData.ingredients.split("\n").filter((i) => i.trim()),
-      instructions: formData.instructions.split("\n").filter((i) => i.trim()),
-      tags: formData.tags.split(",").map((t) => t.trim()).filter(Boolean),
-    }
-
-    if (editingRecipe) {
-      setRecipes((prev) =>
-        prev.map((r) => (r.id === editingRecipe.id ? { ...r, ...recipeData } : r))
-      )
-    } else {
-      const newRecipe: Recipe = {
-        id: crypto.randomUUID(),
-        ...recipeData,
-        isFavorite: false,
-        createdAt: new Date(),
+    setIsSaving(true)
+    try {
+      const recipeData = {
+        title: formData.title,
+        description: formData.description,
+        category: formData.category,
+        prepTime: parseInt(formData.prepTime) || 0,
+        cookTime: parseInt(formData.cookTime) || 0,
+        servings: parseInt(formData.servings) || 4,
+        difficulty: formData.difficulty,
+        ingredients: formData.ingredients.split("\n").filter((i) => i.trim()),
+        instructions: formData.instructions.split("\n").filter((i) => i.trim()),
+        tags: formData.tags.split(",").map((t) => t.trim()).filter(Boolean),
       }
-      setRecipes((prev) => [...prev, newRecipe])
+
+      if (editingRecipe) {
+        await updateRecipe(editingRecipe.id, recipeData)
+      } else {
+        await createRecipe(recipeData)
+      }
+      setIsDialogOpen(false)
+    } finally {
+      setIsSaving(false)
     }
-    setIsDialogOpen(false)
   }
 
-  const handleDelete = (id: string) => {
-    setRecipes((prev) => prev.filter((r) => r.id !== id))
+  const handleDelete = async (id: string) => {
+    await deleteRecipe(id)
   }
 
-  const handleToggleFavorite = (id: string) => {
-    setRecipes((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, isFavorite: !r.isFavorite } : r))
-    )
+  const handleToggleFavorite = async (id: string) => {
+    await toggleFavorite(id)
+    // Update viewing recipe if it's the one being toggled
+    if (viewingRecipe?.id === id) {
+      setViewingRecipe(prev => prev ? { ...prev, isFavorite: !prev.isFavorite } : null)
+    }
   }
 
   const getCategoryInfo = (categoryId: string) => {
     return categories.find((c) => c.id === categoryId) || categories[0]
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (
@@ -512,7 +437,10 @@ export function RecipesPage() {
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} disabled={!formData.title.trim()}>{editingRecipe ? "Save" : "Add"}</Button>
+              <Button onClick={handleSave} disabled={!formData.title.trim() || isSaving}>
+                {isSaving ? <Loader2 className="size-4 mr-2 animate-spin" /> : null}
+                {editingRecipe ? "Save" : "Add"}
+              </Button>
             </div>
           </div>
         </DialogContent>

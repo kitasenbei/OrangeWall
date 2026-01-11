@@ -12,6 +12,7 @@ from app.routes import (
     schedule_router,
     contacts_router,
     preferences_router,
+    recipes_router,
 )
 
 app = FastAPI(
@@ -40,6 +41,7 @@ app.include_router(routines_router, prefix="/api")
 app.include_router(schedule_router, prefix="/api")
 app.include_router(contacts_router, prefix="/api")
 app.include_router(preferences_router, prefix="/api")
+app.include_router(recipes_router, prefix="/api")
 
 
 @app.get("/health")
