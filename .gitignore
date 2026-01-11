@@ -1,0 +1,73 @@
+# Documentation (keep repo clean)
+*.md
+README*
+CHANGELOG*
+LICENSE*
+CONTRIBUTING*
+docs/
+
+# Environment variables (NEVER commit these)
+.env
+.env.*
+!.env.example
+
+# Terraform state (contains secrets)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform generated files
+infra/modules/api/placeholder.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Lambda deployment artifacts
+backend/deployment/
+backend/*.zip
+lambda.zip
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+frontend/dist/
+frontend/dist-ssr/
+
+# IDE and tools
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Local development
+*.local
