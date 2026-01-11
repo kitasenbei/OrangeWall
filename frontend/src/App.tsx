@@ -1,8 +1,7 @@
 import { useState, useRef } from "react"
 import { Routes, Route, Navigate } from "react-router-dom"
-import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
+import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/layout/app-sidebar"
-import { Separator } from "@/components/ui/separator"
 import { ChevronRight } from "lucide-react"
 import { TasksPage } from "@/features/tasks"
 import { NotesPage } from "@/features/notes"
@@ -157,11 +156,6 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset className="flex flex-col h-full">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:hidden">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <span className="font-semibold">Orangewall</span>
-        </header>
         <main className="relative flex-1 min-h-0 p-6 overflow-auto">
           {children}
         </main>
