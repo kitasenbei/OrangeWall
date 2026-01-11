@@ -374,22 +374,22 @@ export function RecipesPage() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-auto sm:max-w-lg w-[calc(100%-2rem)] rounded-lg">
           <DialogHeader>
             <DialogTitle>{editingRecipe ? "Edit Recipe" : "Add Recipe"}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label>Title</Label>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-sm">Title</Label>
               <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} placeholder="Recipe name" />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label>Description</Label>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-sm">Description</Label>
               <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Brief description" rows={2} />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label>Category</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Category</Label>
                 <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -397,8 +397,8 @@ export function RecipesPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Difficulty</Label>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Difficulty</Label>
                 <Select value={formData.difficulty} onValueChange={(v) => setFormData({ ...formData, difficulty: v as Recipe["difficulty"] })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -409,30 +409,30 @@ export function RecipesPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label>Prep (min)</Label>
-                <Input type="number" value={formData.prepTime} onChange={(e) => setFormData({ ...formData, prepTime: e.target.value })} />
+            <div className="grid grid-cols-3 gap-2">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Prep</Label>
+                <Input type="number" value={formData.prepTime} onChange={(e) => setFormData({ ...formData, prepTime: e.target.value })} placeholder="min" />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Cook (min)</Label>
-                <Input type="number" value={formData.cookTime} onChange={(e) => setFormData({ ...formData, cookTime: e.target.value })} />
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Cook</Label>
+                <Input type="number" value={formData.cookTime} onChange={(e) => setFormData({ ...formData, cookTime: e.target.value })} placeholder="min" />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Servings</Label>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-sm">Servings</Label>
                 <Input type="number" value={formData.servings} onChange={(e) => setFormData({ ...formData, servings: e.target.value })} />
               </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label>Ingredients (one per line)</Label>
-              <Textarea value={formData.ingredients} onChange={(e) => setFormData({ ...formData, ingredients: e.target.value })} rows={4} placeholder="2 cups flour&#10;1 egg&#10;..." />
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-sm">Ingredients (one per line)</Label>
+              <Textarea value={formData.ingredients} onChange={(e) => setFormData({ ...formData, ingredients: e.target.value })} rows={3} placeholder="2 cups flour&#10;1 egg&#10;..." />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label>Instructions (one per line)</Label>
-              <Textarea value={formData.instructions} onChange={(e) => setFormData({ ...formData, instructions: e.target.value })} rows={4} placeholder="Preheat oven...&#10;Mix ingredients..." />
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-sm">Instructions (one per line)</Label>
+              <Textarea value={formData.instructions} onChange={(e) => setFormData({ ...formData, instructions: e.target.value })} rows={3} placeholder="Preheat oven...&#10;Mix ingredients..." />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label>Tags (comma separated)</Label>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-sm">Tags (comma separated)</Label>
               <Input value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} placeholder="quick, healthy, vegetarian" />
             </div>
             <div className="flex justify-end gap-2">
