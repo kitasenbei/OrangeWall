@@ -109,39 +109,6 @@ function SidebarProvider({
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [toggleSidebar])
 
-  // Swipe to open sidebar on mobile
-  React.useEffect(() => {
-    if (!isMobile) return
-
-    let touchStartX = 0
-    let touchStartY = 0
-
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartX = e.touches[0].clientX
-      touchStartY = e.touches[0].clientY
-    }
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      const touchEndX = e.changedTouches[0].clientX
-      const touchEndY = e.changedTouches[0].clientY
-      const deltaX = touchEndX - touchStartX
-      const deltaY = Math.abs(touchEndY - touchStartY)
-
-      // Swipe right from left edge to open (start within 30px of left edge, swipe at least 50px right)
-      if (touchStartX < 30 && deltaX > 50 && deltaY < 100 && !openMobile) {
-        setOpenMobile(true)
-      }
-    }
-
-    document.addEventListener("touchstart", handleTouchStart)
-    document.addEventListener("touchend", handleTouchEnd)
-
-    return () => {
-      document.removeEventListener("touchstart", handleTouchStart)
-      document.removeEventListener("touchend", handleTouchEnd)
-    }
-  }, [isMobile, openMobile, setOpenMobile])
-
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = open ? "expanded" : "collapsed"

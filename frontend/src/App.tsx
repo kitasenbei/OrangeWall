@@ -1,7 +1,9 @@
+import { useState, useRef } from "react"
 import { Routes, Route, Navigate } from "react-router-dom"
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { Separator } from "@/components/ui/separator"
+import { ChevronRight } from "lucide-react"
 import { TasksPage } from "@/features/tasks"
 import { NotesPage } from "@/features/notes"
 import { HabitsPage } from "@/features/habits"
@@ -110,6 +112,46 @@ import { BinaryPage } from "@/features/binary"
 import { AspectPage } from "@/features/aspect"
 import { MeetingCostPage } from "@/features/meetingcost"
 
+function MobileSwipeHandle() {
+  const { setOpenMobile, isMobile } = useSidebar()
+  const [isDragging, setIsDragging] = useState(false)
+  const startX = useRef(0)
+
+  if (!isMobile) return null
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX
+    setIsDragging(true)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return
+    const deltaX = e.touches[0].clientX - startX.current
+    if (deltaX > 50) {
+      setOpenMobile(true)
+      setIsDragging(false)
+    }
+  }
+
+  const handleTouchEnd = () => {
+    setIsDragging(false)
+  }
+
+  return (
+    <div
+      className="fixed left-0 top-1/2 -translate-y-1/2 z-50 md:hidden"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onClick={() => setOpenMobile(true)}
+    >
+      <div className="flex items-center justify-center w-6 h-16 bg-primary/10 rounded-r-lg border border-l-0 border-border/50 backdrop-blur-sm">
+        <ChevronRight className="size-4 text-primary/60" />
+      </div>
+    </div>
+  )
+}
+
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
@@ -123,6 +165,8 @@ function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="relative flex-1 min-h-0 p-6 overflow-auto">
           {children}
         </main>
+        {/* Mobile swipe handle */}
+        <MobileSwipeHandle />
       </SidebarInset>
       <CommandPalette />
     </SidebarProvider>
