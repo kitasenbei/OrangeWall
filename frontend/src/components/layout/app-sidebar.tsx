@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { NavLink } from "react-router-dom"
-import { LogOut, ChevronRight, Sun, Moon, Monitor, Star, StarOff } from "lucide-react"
+import { LogOut, ChevronRight, Sun, Moon, Monitor, Star, StarOff, Languages } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import {
   Sidebar,
   SidebarContent,
@@ -45,6 +46,7 @@ export function AppSidebar() {
   const { user, logout } = useAuth()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const { favoriteTools, toggleFavorite, isFavorite } = usePreferences()
+  const { i18n } = useTranslation()
   const [openGroups, setOpenGroups] = useState<string[]>(["Favorites", "Productivity"])
 
   const toggleGroup = (title: string) => {
@@ -211,6 +213,26 @@ export function AppSidebar() {
                 <DropdownMenuItem onClick={() => setTheme("system")}>
                   <Monitor className="size-4 mr-2" />
                   System
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton tooltip="Language">
+                  <Languages className="size-4" />
+                  <span className="truncate">
+                    {i18n.language === "ja" ? "日本語" : "English"}
+                  </span>
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start" className="w-40">
+                <DropdownMenuItem onClick={() => i18n.changeLanguage("en")}>
+                  English
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => i18n.changeLanguage("ja")}>
+                  日本語
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
