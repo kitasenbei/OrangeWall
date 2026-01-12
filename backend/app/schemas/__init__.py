@@ -12,7 +12,7 @@ from .kanban import (
 from .calendar import EventCreate, EventUpdate, EventResponse
 from .routine import RoutineCreate, RoutineUpdate, RoutineResponse
 from .schedule import ScheduleBlockCreate, ScheduleBlockUpdate, ScheduleBlockResponse
-from .contact import ContactCreate, ContactUpdate, ContactResponse
+from .contact import ContactCreate, ContactUpdate, ContactResponse, ContactLink
 from .preferences import UserPreferencesUpdate, UserPreferencesResponse
 from .recipe import RecipeCreate, RecipeUpdate, RecipeResponse
 from .shopping import ShoppingListCreate, ShoppingListUpdate, ShoppingListResponse, ShoppingItem

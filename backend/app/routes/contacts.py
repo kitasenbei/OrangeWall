@@ -11,8 +11,8 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 def get_contacts():
     response = contacts_table.scan()
     items = response.get("Items", [])
-    # Sort: favorites first, then alphabetically
-    return sorted(items, key=lambda x: (not x.get("favorite", False), x.get("name", "").lower()))
+    # Sort alphabetically by name
+    return sorted(items, key=lambda x: x.get("name", "").lower())
 
 
 @router.get("/{contact_id}", response_model=ContactResponse)
@@ -29,12 +29,13 @@ def create_contact(contact: ContactCreate):
     item = {
         "id": str(uuid.uuid4()),
         "name": contact.name,
-        "email": contact.email,
-        "phone": contact.phone,
         "company": contact.company,
+        "role": contact.role,
+        "category": contact.category,
         "notes": contact.notes,
-        "avatar": contact.avatar,
-        "favorite": contact.favorite,
+        "links": [link.model_dump() for link in contact.links],
+        "lastContact": contact.lastContact,
+        "nextFollowUp": contact.nextFollowUp,
     }
     contacts_table.put_item(Item=item)
     return item
@@ -51,12 +52,18 @@ def update_contact(contact_id: str, contact: ContactUpdate):
     expr_values = {}
     expr_names = {}
 
-    for field in ["name", "email", "phone", "company", "notes", "avatar", "favorite"]:
+    for field in ["name", "company", "role", "category", "notes", "lastContact", "nextFollowUp"]:
         value = getattr(contact, field)
         if value is not None:
             update_expr.append(f"#{field} = :{field}")
             expr_values[f":{field}"] = value
             expr_names[f"#{field}"] = field
+
+    # Handle links separately (it's a list of objects)
+    if contact.links is not None:
+        update_expr.append("#links = :links")
+        expr_values[":links"] = [link.model_dump() for link in contact.links]
+        expr_names["#links"] = "links"
 
     if update_expr:
         contacts_table.update_item(
