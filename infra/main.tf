@@ -82,6 +82,7 @@ module "api" {
     CONTACTS_TABLE         = module.database.table_names["contacts"]
     USER_PREFERENCES_TABLE = module.database.table_names["user_preferences"]
     RECIPES_TABLE          = module.database.table_names["recipes"]
+    GROCERY_LISTS_TABLE    = module.database.table_names["grocery_lists"]
   }
 
   # Cognito auth

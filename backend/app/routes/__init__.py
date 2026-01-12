@@ -8,6 +8,7 @@ from .schedule import router as schedule_router
 from .contacts import router as contacts_router
 from .preferences import router as preferences_router
 from .recipes import router as recipes_router
+from .grocery import router as grocery_router
 
 __all__ = [
     "tasks_router",
@@ -20,4 +21,5 @@ __all__ = [
     "contacts_router",
     "preferences_router",
     "recipes_router",
+    "grocery_router",
 ]

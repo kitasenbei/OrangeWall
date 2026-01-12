@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Plus,
   Trash2,
@@ -22,7 +22,9 @@ import {
   Sparkles,
   Package,
   Edit2,
+  Loader2,
 } from "lucide-react"
+import { useGrocery, type GroceryItem } from "@/hooks/use-grocery"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -48,24 +50,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { LucideIcon } from "lucide-react"
-
-interface GroceryItem {
-  id: string
-  name: string
-  category: string
-  checked: boolean
-  quantity: number
-  unit: string
-  note?: string
-  price?: number
-}
-
-interface GroceryList {
-  id: string
-  name: string
-  items: GroceryItem[]
-  createdAt: Date
-}
 
 const categories: { name: string; icon: LucideIcon }[] = [
   { name: "Produce", icon: Apple },
@@ -97,31 +81,11 @@ const frequentItems = [
   { name: "Pasta", category: "Other", unit: "pkg" },
 ]
 
-const initialLists: GroceryList[] = [
-  {
-    id: "1",
-    name: "Weekly Shopping",
-    createdAt: new Date(),
-    items: [
-      { id: "1", name: "Apples", category: "Produce", checked: false, quantity: 2, unit: "lb", price: 3.99 },
-      { id: "2", name: "Bananas", category: "Produce", checked: false, quantity: 1, unit: "bunch", price: 1.29 },
-      { id: "3", name: "Milk", category: "Dairy", checked: false, quantity: 1, unit: "gal", price: 4.49 },
-      { id: "4", name: "Eggs", category: "Dairy", checked: true, quantity: 1, unit: "dozen", price: 5.99 },
-      { id: "5", name: "Chicken breast", category: "Meat & Seafood", checked: false, quantity: 2, unit: "lb", price: 8.99 },
-      { id: "6", name: "Bread", category: "Bakery", checked: false, quantity: 1, unit: "", price: 3.49 },
-      { id: "7", name: "Broccoli", category: "Vegetables", checked: false, quantity: 2, unit: "lb", price: 2.99 },
-      { id: "8", name: "Carrots", category: "Vegetables", checked: true, quantity: 1, unit: "lb", price: 1.49 },
-      { id: "9", name: "Orange juice", category: "Beverages", checked: false, quantity: 1, unit: "", price: 4.99 },
-      { id: "10", name: "Greek yogurt", category: "Dairy", checked: false, quantity: 2, unit: "ct", price: 1.29 },
-    ],
-  },
-]
-
 type SortOption = "category" | "name" | "checked"
 
 export function GroceryPage() {
-  const [lists, setLists] = useState<GroceryList[]>(initialLists)
-  const [activeListId, setActiveListId] = useState(initialLists[0].id)
+  const { lists, loading, error, createList: apiCreateList, updateList: apiUpdateList, deleteList: apiDeleteList } = useGrocery()
+  const [activeListId, setActiveListId] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [sortBy, setSortBy] = useState<SortOption>("category")
   const [collapsedCategories, setCollapsedCategories] = useState<string[]>([])
@@ -138,6 +102,13 @@ export function GroceryPage() {
   const [newPrice, setNewPrice] = useState("")
   const [newNote, setNewNote] = useState("")
   const [newListName, setNewListName] = useState("")
+
+  // Set active list when lists load
+  useEffect(() => {
+    if (lists.length > 0 && !activeListId) {
+      setActiveListId(lists[0].id)
+    }
+  }, [lists, activeListId])
 
   const activeList = lists.find(l => l.id === activeListId)
   const items = activeList?.items || []
@@ -166,11 +137,12 @@ export function GroceryPage() {
     )
   }
 
-  const updateList = (listId: string, updater: (list: GroceryList) => GroceryList) => {
-    setLists(prev => prev.map(l => (l.id === listId ? updater(l) : l)))
+  const updateListItems = async (newItems: GroceryItem[]) => {
+    if (!activeListId) return
+    await apiUpdateList(activeListId, { items: newItems })
   }
 
-  const addItem = () => {
+  const addItem = async () => {
     if (!newName.trim() || !activeList) return
 
     const item: GroceryItem = {
@@ -184,35 +156,29 @@ export function GroceryPage() {
       note: newNote || undefined,
     }
 
-    updateList(activeListId, list => ({
-      ...list,
-      items: [...list.items, item],
-    }))
-
+    await updateListItems([...activeList.items, item])
     resetForm()
     setShowAddDialog(false)
   }
 
-  const updateItem = () => {
+  const updateItem = async () => {
     if (!editingItem || !activeList) return
 
-    updateList(activeListId, list => ({
-      ...list,
-      items: list.items.map(i =>
-        i.id === editingItem.id
-          ? {
-              ...editingItem,
-              name: newName,
-              category: newCategory,
-              quantity: newQuantity,
-              unit: newUnit,
-              price: newPrice ? parseFloat(newPrice) : undefined,
-              note: newNote || undefined,
-            }
-          : i
-      ),
-    }))
+    const newItems = activeList.items.map(i =>
+      i.id === editingItem.id
+        ? {
+            ...editingItem,
+            name: newName,
+            category: newCategory,
+            quantity: newQuantity,
+            unit: newUnit,
+            price: newPrice ? parseFloat(newPrice) : undefined,
+            note: newNote || undefined,
+          }
+        : i
+    )
 
+    await updateListItems(newItems)
     resetForm()
     setEditingItem(null)
   }
@@ -226,55 +192,44 @@ export function GroceryPage() {
     setNewNote("")
   }
 
-  const toggleItem = (id: string) => {
-    updateList(activeListId, list => ({
-      ...list,
-      items: list.items.map(i => (i.id === id ? { ...i, checked: !i.checked } : i)),
-    }))
+  const toggleItem = async (id: string) => {
+    if (!activeList) return
+    const newItems = activeList.items.map(i => (i.id === id ? { ...i, checked: !i.checked } : i))
+    await updateListItems(newItems)
   }
 
-  const deleteItem = (id: string) => {
-    updateList(activeListId, list => ({
-      ...list,
-      items: list.items.filter(i => i.id !== id),
-    }))
+  const deleteItem = async (id: string) => {
+    if (!activeList) return
+    const newItems = activeList.items.filter(i => i.id !== id)
+    await updateListItems(newItems)
   }
 
-  const clearChecked = () => {
-    updateList(activeListId, list => ({
-      ...list,
-      items: list.items.filter(i => !i.checked),
-    }))
+  const clearChecked = async () => {
+    if (!activeList) return
+    const newItems = activeList.items.filter(i => !i.checked)
+    await updateListItems(newItems)
   }
 
-  const uncheckAll = () => {
-    updateList(activeListId, list => ({
-      ...list,
-      items: list.items.map(i => ({ ...i, checked: false })),
-    }))
+  const uncheckAll = async () => {
+    if (!activeList) return
+    const newItems = activeList.items.map(i => ({ ...i, checked: false }))
+    await updateListItems(newItems)
   }
 
-  const createList = () => {
+  const createList = async () => {
     if (!newListName.trim()) return
 
-    const newList: GroceryList = {
-      id: Date.now().toString(),
-      name: newListName.trim(),
-      items: [],
-      createdAt: new Date(),
-    }
-
-    setLists(prev => [...prev, newList])
+    const newList = await apiCreateList({ name: newListName.trim(), items: [] })
     setActiveListId(newList.id)
     setNewListName("")
     setShowNewListDialog(false)
   }
 
-  const deleteList = (id: string) => {
+  const deleteList = async (id: string) => {
     if (lists.length === 1) return
-    setLists(prev => prev.filter(l => l.id !== id))
+    await apiDeleteList(id)
     if (activeListId === id) {
-      setActiveListId(lists.find(l => l.id !== id)?.id || "")
+      setActiveListId(lists.find(l => l.id !== id)?.id || null)
     }
   }
 
@@ -307,7 +262,7 @@ export function GroceryPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const quickAddItem = (item: typeof frequentItems[0]) => {
+  const quickAddItem = async (item: typeof frequentItems[0]) => {
     if (!activeList) return
 
     const newItem: GroceryItem = {
@@ -319,10 +274,7 @@ export function GroceryPage() {
       unit: item.unit,
     }
 
-    updateList(activeListId, list => ({
-      ...list,
-      items: [...list.items, newItem],
-    }))
+    await updateListItems([...activeList.items, newItem])
   }
 
   const openEditDialog = (item: GroceryItem) => {
@@ -347,6 +299,23 @@ export function GroceryPage() {
     return cat?.icon || Package
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-destructive mb-4">{error}</p>
+        <Button onClick={() => window.location.reload()}>Retry</Button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -356,11 +325,11 @@ export function GroceryPage() {
           <p className="text-sm text-muted-foreground">Organize your shopping</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={copyList}>
+          <Button variant="outline" size="sm" onClick={copyList} disabled={!activeList}>
             {copied ? <Check className="size-4 mr-2" /> : <Copy className="size-4 mr-2" />}
             {copied ? "Copied" : "Copy List"}
           </Button>
-          <Button size="sm" onClick={() => setShowAddDialog(true)}>
+          <Button size="sm" onClick={() => setShowAddDialog(true)} disabled={!activeList}>
             <Plus className="size-4 mr-2" />
             Add Item
           </Button>
@@ -466,8 +435,8 @@ export function GroceryPage() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => deleteList(activeListId)}
-              disabled={lists.length === 1}
+              onClick={() => activeListId && deleteList(activeListId)}
+              disabled={lists.length <= 1 || !activeListId}
               className="text-destructive"
             >
               Delete List
@@ -572,39 +541,53 @@ export function GroceryPage() {
       ) : (
         <div className="text-center py-12 bg-card border rounded-lg">
           <ShoppingCart className="size-12 mx-auto mb-4 text-muted-foreground/50" />
-          <p className="text-muted-foreground mb-4">Your grocery list is empty</p>
-          <Button onClick={() => setShowAddDialog(true)}>
-            <Plus className="size-4 mr-2" />
-            Add First Item
-          </Button>
+          {lists.length === 0 ? (
+            <>
+              <p className="text-muted-foreground mb-4">No grocery lists yet</p>
+              <Button onClick={() => setShowNewListDialog(true)}>
+                <Plus className="size-4 mr-2" />
+                Create First List
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground mb-4">Your grocery list is empty</p>
+              <Button onClick={() => setShowAddDialog(true)}>
+                <Plus className="size-4 mr-2" />
+                Add First Item
+              </Button>
+            </>
+          )}
         </div>
       )}
 
       {/* Quick Add */}
-      <div className="bg-card border rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-medium">Quick Add</h3>
-          <p className="text-xs text-muted-foreground">Click to add common items</p>
+      {activeList && (
+        <div className="bg-card border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium">Quick Add</h3>
+            <p className="text-xs text-muted-foreground">Click to add common items</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {frequentItems
+              .filter(fi => !items.some(i => i.name.toLowerCase() === fi.name.toLowerCase()))
+              .slice(0, 10)
+              .map(item => {
+                const Icon = getCategoryIcon(item.category)
+                return (
+                  <button
+                    key={item.name}
+                    onClick={() => quickAddItem(item)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-md text-sm hover:bg-muted/80 transition-colors"
+                  >
+                    <Icon className="size-3 text-muted-foreground" />
+                    {item.name}
+                  </button>
+                )
+              })}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {frequentItems
-            .filter(fi => !items.some(i => i.name.toLowerCase() === fi.name.toLowerCase()))
-            .slice(0, 10)
-            .map(item => {
-              const Icon = getCategoryIcon(item.category)
-              return (
-                <button
-                  key={item.name}
-                  onClick={() => quickAddItem(item)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-md text-sm hover:bg-muted/80 transition-colors"
-                >
-                  <Icon className="size-3 text-muted-foreground" />
-                  {item.name}
-                </button>
-              )
-            })}
-        </div>
-      </div>
+      )}
 
       {/* Add/Edit Item Dialog */}
       <Dialog open={showAddDialog || !!editingItem} onOpenChange={open => {

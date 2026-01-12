@@ -15,6 +15,7 @@ from .schedule import ScheduleBlockCreate, ScheduleBlockUpdate, ScheduleBlockRes
 from .contact import ContactCreate, ContactUpdate, ContactResponse
 from .preferences import UserPreferencesUpdate, UserPreferencesResponse
 from .recipe import RecipeCreate, RecipeUpdate, RecipeResponse
+from .shopping import ShoppingListCreate, ShoppingListUpdate, ShoppingListResponse, ShoppingItem
 
 __all__ = [
     "TaskCreate", "TaskUpdate", "TaskResponse",
@@ -30,4 +31,5 @@ __all__ = [
     "ContactCreate", "ContactUpdate", "ContactResponse",
     "UserPreferencesUpdate", "UserPreferencesResponse",
     "RecipeCreate", "RecipeUpdate", "RecipeResponse",
+    "ShoppingListCreate", "ShoppingListUpdate", "ShoppingListResponse", "ShoppingItem",
 ]
