@@ -66,12 +66,14 @@ def update_meal_plan(plan_id: str, data: MealPlanUpdate):
         expr_values[":days"] = [d.model_dump() for d in data.days]
 
     if update_expr:
-        meal_plans_table.update_item(
-            Key={"id": plan_id},
-            UpdateExpression="SET " + ", ".join(update_expr),
-            ExpressionAttributeValues=expr_values,
-            ExpressionAttributeNames=expr_names if expr_names else None,
-        )
+        update_kwargs = {
+            "Key": {"id": plan_id},
+            "UpdateExpression": "SET " + ", ".join(update_expr),
+            "ExpressionAttributeValues": expr_values,
+        }
+        if expr_names:
+            update_kwargs["ExpressionAttributeNames"] = expr_names
+        meal_plans_table.update_item(**update_kwargs)
 
     response = meal_plans_table.get_item(Key={"id": plan_id})
     return response.get("Item")
