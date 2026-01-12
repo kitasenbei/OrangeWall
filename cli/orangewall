@@ -832,6 +832,121 @@ def find_contact(contacts, name):
     return None
 
 
+# ============ TASKS ============
+
+TASK_STATUSES = ["pending", "in_progress", "completed", "on_hold"]
+TASK_PRIORITIES = ["low", "medium", "high", "urgent"]
+
+
+def tasks_list(args):
+    """Show all tasks."""
+    tasks = api_get("/tasks")
+    if not tasks:
+        print("No tasks yet. Create one with: orangewall tasks add 'My Task'")
+        return
+
+    # Group by status
+    status_order = {"pending": 0, "in_progress": 1, "on_hold": 2, "completed": 3}
+    priority_icons = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
+
+    current_status = None
+    for task in sorted(tasks, key=lambda t: (status_order.get(t.get("status"), 99), t.get("order", 0))):
+        if args.hide_completed and task.get("status") == "completed":
+            continue
+
+        if task.get("status") != current_status:
+            current_status = task.get("status")
+            print(f"\n{current_status.upper().replace('_', ' ')}:")
+
+        priority = task.get("priority", "medium")
+        icon = priority_icons.get(priority, "⚪")
+        due = f" (due: {task['dueDate'][:10]})" if task.get("dueDate") else ""
+        tags = f" [{', '.join(task.get('tags', []))}]" if task.get("tags") else ""
+
+        print(f"  {icon} [{task['id'][:8]}] {task['title']}{due}{tags}")
+
+
+def tasks_add(args):
+    """Add a new task."""
+    task = api_post("/tasks", {
+        "title": args.title,
+        "status": "pending",
+        "priority": args.priority or "medium",
+        "description": args.description or "",
+        "dueDate": args.due,
+        "tags": args.tags.split(",") if args.tags else [],
+        "subtasks": [],
+    })
+    priority_icons = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
+    icon = priority_icons.get(task.get("priority", "medium"), "⚪")
+    print(f"  {icon} + {task['title']} [{task['id'][:8]}]")
+
+
+def tasks_complete(args):
+    """Mark a task as completed."""
+    tasks = api_get("/tasks")
+    task = find_task(tasks, args.task)
+    if not task:
+        print(f"Task '{args.task}' not found")
+        return
+
+    api_patch(f"/tasks/{task['id']}", {"status": "completed"})
+    print(f"  ✓ Completed: {task['title']}")
+
+
+def tasks_start(args):
+    """Mark a task as in progress."""
+    tasks = api_get("/tasks")
+    task = find_task(tasks, args.task)
+    if not task:
+        print(f"Task '{args.task}' not found")
+        return
+
+    api_patch(f"/tasks/{task['id']}", {"status": "in_progress"})
+    print(f"  ▶ Started: {task['title']}")
+
+
+def tasks_delete(args):
+    """Delete a task."""
+    tasks = api_get("/tasks")
+    task = find_task(tasks, args.task)
+    if not task:
+        print(f"Task '{args.task}' not found")
+        return
+
+    api_delete(f"/tasks/{task['id']}")
+    print(f"  - Deleted: {task['title']}")
+
+
+def tasks_clear_completed(args):
+    """Delete all completed tasks."""
+    tasks = api_get("/tasks")
+    completed = [t for t in tasks if t.get("status") == "completed"]
+
+    if not completed:
+        print("No completed tasks to clear")
+        return
+
+    for task in completed:
+        api_delete(f"/tasks/{task['id']}")
+        print(f"  - {task['title']}")
+
+    print(f"\nCleared {len(completed)} completed task(s)")
+
+
+def find_task(tasks, query):
+    """Find a task by title or ID prefix."""
+    query_lower = query.lower()
+    for task in tasks:
+        if task["id"].startswith(query) or task["title"].lower() == query_lower:
+            return task
+    # Fuzzy match
+    for task in tasks:
+        if query_lower in task["title"].lower():
+            return task
+    return None
+
+
 # ============ MAIN ============
 
 def main():
@@ -1003,6 +1118,37 @@ def main():
     p = contacts_sub.add_parser("delete", aliases=["rm"], help="Delete a contact")
     p.add_argument("contact", help="Contact name or ID")
 
+    # === TASKS ===
+    tasks = subparsers.add_parser("tasks", aliases=["t"], help="Manage tasks")
+    tasks_sub = tasks.add_subparsers(dest="action")
+
+    # tasks list
+    p = tasks_sub.add_parser("list", aliases=["ls"], help="Show all tasks")
+    p.add_argument("--hide-completed", action="store_true", help="Hide completed tasks")
+
+    # tasks add <title>
+    p = tasks_sub.add_parser("add", aliases=["a"], help="Add a new task")
+    p.add_argument("title", help="Task title")
+    p.add_argument("-p", "--priority", choices=TASK_PRIORITIES, help="Priority level")
+    p.add_argument("-d", "--due", help="Due date (YYYY-MM-DD)")
+    p.add_argument("-t", "--tags", help="Tags (comma-separated)")
+    p.add_argument("--description", help="Task description")
+
+    # tasks complete <task>
+    p = tasks_sub.add_parser("complete", aliases=["done", "c"], help="Mark task as completed")
+    p.add_argument("task", help="Task title or ID")
+
+    # tasks start <task>
+    p = tasks_sub.add_parser("start", help="Mark task as in progress")
+    p.add_argument("task", help="Task title or ID")
+
+    # tasks delete <task>
+    p = tasks_sub.add_parser("delete", aliases=["rm"], help="Delete a task")
+    p.add_argument("task", help="Task title or ID")
+
+    # tasks clear-completed
+    tasks_sub.add_parser("clear-completed", help="Delete all completed tasks")
+
     args = parser.parse_args()
 
     # Auth commands
@@ -1071,6 +1217,20 @@ def main():
             actions[args.action](args)
         else:
             contacts_list(args)  # Default: show contacts
+    # Tasks commands
+    elif args.command in ("tasks", "t"):
+        actions = {
+            "list": tasks_list, "ls": tasks_list,
+            "add": tasks_add, "a": tasks_add,
+            "complete": tasks_complete, "done": tasks_complete, "c": tasks_complete,
+            "start": tasks_start,
+            "delete": tasks_delete, "rm": tasks_delete,
+            "clear-completed": tasks_clear_completed,
+        }
+        if args.action in actions:
+            actions[args.action](args)
+        else:
+            tasks_list(args)  # Default: show tasks
     else:
         parser.print_help()
 
