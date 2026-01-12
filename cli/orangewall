@@ -553,7 +553,7 @@ def meal_plan_import(args):
 
     # Patterns
     day_pattern = re.compile(r"\*\*(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday).*\*\*")
-    meal_pattern = re.compile(r"^(Breakfast|Lunch|Snack|Dinner):\s*(.+)$", re.IGNORECASE)
+    meal_pattern = re.compile(r"^(Breakfast|Lunch|Snack|Dinner)(?:\s*\(([^)]*)\))?:\s*(.+)$", re.IGNORECASE)
 
     lines = content.split("\n")
     day_offset = 0
@@ -582,13 +582,8 @@ def meal_plan_import(args):
             meal_match = meal_pattern.match(line)
             if meal_match:
                 meal_type = meal_match.group(1).lower()
-                meal_name = meal_match.group(2).strip()
-
-                # Check for notes in parentheses
-                notes = None
-                if "(buy)" in meal_name.lower():
-                    notes = "buy"
-                    meal_name = meal_name.replace("(buy)", "").strip()
+                notes = meal_match.group(2)  # e.g., "buy"
+                meal_name = meal_match.group(3).strip()
 
                 current_day[meal_type] = {
                     "name": meal_name,
