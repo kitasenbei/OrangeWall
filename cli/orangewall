@@ -691,6 +691,147 @@ def schedule_clear(args):
     print(f"\nCleared {len(blocks)} blocks")
 
 
+# ============ CONTACTS ============
+
+LINK_TYPES = ["email", "phone", "discord", "twitter", "linkedin", "instagram", "github", "telegram", "whatsapp", "line", "slack", "website"]
+
+def contacts_list(args):
+    """Show all contacts."""
+    contacts = api_get("/contacts")
+    if not contacts:
+        print("No contacts yet. Create one with: orangewall contacts add 'John Doe'")
+        return
+
+    for contact in contacts:
+        category = contact.get("category", "other")
+        company = contact.get("company", "")
+        role = contact.get("role", "")
+        info = f" ({company})" if company else ""
+        if role:
+            info = f" ({company} - {role})" if company else f" ({role})"
+
+        links = contact.get("links", [])
+        link_icons = " ".join([l["type"][0].upper() for l in links[:5]])
+
+        print(f"  [{contact['id'][:8]}] {contact['name']}{info} [{category}] {link_icons}")
+
+
+def contacts_show(args):
+    """Show a contact's details."""
+    contacts = api_get("/contacts")
+    contact = find_contact(contacts, args.contact)
+    if not contact:
+        print(f"Contact '{args.contact}' not found")
+        return
+
+    print(f"\n{contact['name']}")
+    print("=" * 40)
+
+    if contact.get("company") or contact.get("role"):
+        parts = [contact.get("company", ""), contact.get("role", "")]
+        print(f"  {' - '.join(p for p in parts if p)}")
+
+    print(f"  Category: {contact.get('category', 'other')}")
+
+    links = contact.get("links", [])
+    if links:
+        print("\n  Links:")
+        for link in links:
+            label = f" ({link['label']})" if link.get("label") else ""
+            print(f"    {link['type']:12} {link['value']}{label}")
+
+    if contact.get("notes"):
+        print(f"\n  Notes: {contact['notes']}")
+
+    if contact.get("lastContact"):
+        print(f"\n  Last contact: {contact['lastContact'][:10]}")
+    if contact.get("nextFollowUp"):
+        print(f"  Follow-up: {contact['nextFollowUp'][:10]}")
+
+
+def contacts_add(args):
+    """Add a new contact."""
+    links = []
+    if args.email:
+        links.append({"type": "email", "value": args.email})
+    if args.phone:
+        links.append({"type": "phone", "value": args.phone})
+    if args.discord:
+        links.append({"type": "discord", "value": args.discord})
+    if args.twitter:
+        links.append({"type": "twitter", "value": args.twitter})
+    if args.linkedin:
+        links.append({"type": "linkedin", "value": args.linkedin})
+
+    contact = api_post("/contacts", {
+        "name": args.name,
+        "company": args.company or "",
+        "role": args.role or "",
+        "category": args.category or "other",
+        "notes": args.notes or "",
+        "links": links,
+    })
+    print(f"  + {contact['name']} [{contact['id'][:8]}]")
+    for link in links:
+        print(f"    {link['type']}: {link['value']}")
+
+
+def contacts_add_link(args):
+    """Add a link to an existing contact."""
+    contacts = api_get("/contacts")
+    contact = find_contact(contacts, args.contact)
+    if not contact:
+        print(f"Contact '{args.contact}' not found")
+        return
+
+    links = contact.get("links", [])
+    new_link = {"type": args.type, "value": args.value}
+    if args.label:
+        new_link["label"] = args.label
+    links.append(new_link)
+
+    api_patch(f"/contacts/{contact['id']}", {"links": links})
+    print(f"  + {args.type}: {args.value}")
+
+
+def contacts_delete(args):
+    """Delete a contact."""
+    contacts = api_get("/contacts")
+    contact = find_contact(contacts, args.contact)
+    if not contact:
+        print(f"Contact '{args.contact}' not found")
+        return
+    api_delete(f"/contacts/{contact['id']}")
+    print(f"  - Deleted: {contact['name']}")
+
+
+def contacts_log(args):
+    """Log a contact (set lastContact to now)."""
+    contacts = api_get("/contacts")
+    contact = find_contact(contacts, args.contact)
+    if not contact:
+        print(f"Contact '{args.contact}' not found")
+        return
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    api_patch(f"/contacts/{contact['id']}", {"lastContact": now})
+    print(f"  Logged contact with {contact['name']}")
+
+
+def find_contact(contacts, name):
+    """Find a contact by name or ID prefix."""
+    name_lower = name.lower()
+    for contact in contacts:
+        if contact["name"].lower() == name_lower or contact["id"].startswith(name):
+            return contact
+    # Fuzzy match
+    for contact in contacts:
+        if name_lower in contact["name"].lower():
+            return contact
+    return None
+
+
 # ============ MAIN ============
 
 def main():
@@ -823,6 +964,45 @@ def main():
     # schedule clear
     schedule_sub.add_parser("clear", help="Clear all schedule blocks")
 
+    # === CONTACTS ===
+    contacts = subparsers.add_parser("contacts", aliases=["c"], help="Manage contacts")
+    contacts_sub = contacts.add_subparsers(dest="action")
+
+    # contacts list
+    contacts_sub.add_parser("list", aliases=["ls"], help="Show all contacts")
+
+    # contacts show <contact>
+    p = contacts_sub.add_parser("show", aliases=["s"], help="Show contact details")
+    p.add_argument("contact", help="Contact name or ID")
+
+    # contacts add <name> [--email, --phone, --discord, etc.]
+    p = contacts_sub.add_parser("add", help="Add a new contact")
+    p.add_argument("name", help="Contact name")
+    p.add_argument("--company", help="Company name")
+    p.add_argument("--role", help="Role/title")
+    p.add_argument("--category", choices=["investor", "client", "partner", "mentor", "other"], help="Category")
+    p.add_argument("--notes", help="Notes about the contact")
+    p.add_argument("--email", help="Email address")
+    p.add_argument("--phone", help="Phone number")
+    p.add_argument("--discord", help="Discord username")
+    p.add_argument("--twitter", help="Twitter handle")
+    p.add_argument("--linkedin", help="LinkedIn URL")
+
+    # contacts add-link <contact> --type <type> --value <value>
+    p = contacts_sub.add_parser("add-link", help="Add a link to a contact")
+    p.add_argument("contact", help="Contact name or ID")
+    p.add_argument("--type", required=True, choices=LINK_TYPES, help="Link type")
+    p.add_argument("--value", required=True, help="Link value")
+    p.add_argument("--label", help="Optional label (e.g., 'Work', 'Personal')")
+
+    # contacts log <contact>
+    p = contacts_sub.add_parser("log", help="Log a contact (set last contact to now)")
+    p.add_argument("contact", help="Contact name or ID")
+
+    # contacts delete <contact>
+    p = contacts_sub.add_parser("delete", aliases=["rm"], help="Delete a contact")
+    p.add_argument("contact", help="Contact name or ID")
+
     args = parser.parse_args()
 
     # Auth commands
@@ -877,6 +1057,20 @@ def main():
             actions[args.action](args)
         else:
             schedule_list(args)  # Default: show blocks
+    # Contacts commands
+    elif args.command in ("contacts", "c"):
+        actions = {
+            "list": contacts_list, "ls": contacts_list,
+            "show": contacts_show, "s": contacts_show,
+            "add": contacts_add,
+            "add-link": contacts_add_link,
+            "log": contacts_log,
+            "delete": contacts_delete, "rm": contacts_delete,
+        }
+        if args.action in actions:
+            actions[args.action](args)
+        else:
+            contacts_list(args)  # Default: show contacts
     else:
         parser.print_help()
 
