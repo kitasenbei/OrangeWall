@@ -2,7 +2,7 @@ import { useState, useRef } from "react"
 import { Routes, Route, Navigate } from "react-router-dom"
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/layout/app-sidebar"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Search } from "lucide-react"
 import { TasksPage } from "@/features/tasks"
 import { NotesPage } from "@/features/notes"
 import { HabitsPage } from "@/features/habits"
@@ -151,7 +151,25 @@ function MobileSwipeHandle() {
   )
 }
 
+function MobileSearchButton({ onClick }: { onClick: () => void }) {
+  const { isMobile } = useSidebar()
+
+  if (!isMobile) return null
+
+  return (
+    <button
+      onClick={onClick}
+      className="fixed bottom-6 right-6 z-50 md:hidden size-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+      aria-label="Search tools"
+    >
+      <Search className="size-6" />
+    </button>
+  )
+}
+
 function AppLayout({ children }: { children: React.ReactNode }) {
+  const [searchOpen, setSearchOpen] = useState(false)
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -161,8 +179,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
         </main>
         {/* Mobile swipe handle */}
         <MobileSwipeHandle />
+        {/* Mobile search button */}
+        <MobileSearchButton onClick={() => setSearchOpen(true)} />
       </SidebarInset>
-      <CommandPalette />
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </SidebarProvider>
   )
 }
