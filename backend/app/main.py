@@ -14,6 +14,7 @@ from app.routes import (
     preferences_router,
     recipes_router,
     grocery_router,
+    meal_plans_router,
 )
 
 app = FastAPI(
@@ -44,6 +45,7 @@ app.include_router(contacts_router, prefix="/api")
 app.include_router(preferences_router, prefix="/api")
 app.include_router(recipes_router, prefix="/api")
 app.include_router(grocery_router, prefix="/api")
+app.include_router(meal_plans_router, prefix="/api")
 
 
 @app.get("/health")

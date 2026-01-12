@@ -18,6 +18,7 @@ CONTACTS_TABLE = os.getenv("CONTACTS_TABLE", "orangewall-dev-contacts")
 USER_PREFERENCES_TABLE = os.getenv("USER_PREFERENCES_TABLE", "orangewall-dev-user_preferences")
 RECIPES_TABLE = os.getenv("RECIPES_TABLE", "orangewall-dev-recipes")
 GROCERY_LISTS_TABLE = os.getenv("GROCERY_LISTS_TABLE", "orangewall-dev-grocery_lists")
+MEAL_PLANS_TABLE = os.getenv("MEAL_PLANS_TABLE", "orangewall-dev-meal_plans")
 
 dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
 
@@ -36,3 +37,4 @@ contacts_table = dynamodb.Table(CONTACTS_TABLE)
 user_preferences_table = dynamodb.Table(USER_PREFERENCES_TABLE)
 recipes_table = dynamodb.Table(RECIPES_TABLE)
 grocery_lists_table = dynamodb.Table(GROCERY_LISTS_TABLE)
+meal_plans_table = dynamodb.Table(MEAL_PLANS_TABLE)

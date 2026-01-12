@@ -83,6 +83,7 @@ module "api" {
     USER_PREFERENCES_TABLE = module.database.table_names["user_preferences"]
     RECIPES_TABLE          = module.database.table_names["recipes"]
     GROCERY_LISTS_TABLE    = module.database.table_names["grocery_lists"]
+    MEAL_PLANS_TABLE       = module.database.table_names["meal_plans"]
   }
 
   # Cognito auth

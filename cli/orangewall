@@ -1,0 +1,779 @@
+#!/usr/bin/env python3
+"""Orangewall CLI - Manage your personal hub from the command line."""
+
+import argparse
+import json
+import os
+import sys
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+import boto3
+import requests
+
+# Config
+API_URL = os.getenv("ORANGEWALL_API_URL", "https://ps5q2evpp4.execute-api.ap-northeast-1.amazonaws.com")
+COGNITO_CLIENT_ID = os.getenv("ORANGEWALL_COGNITO_CLIENT_ID", "51f0mlr4kuc0s1rgibjd6gh3g")
+COGNITO_REGION = os.getenv("ORANGEWALL_COGNITO_REGION", "ap-northeast-1")
+CONFIG_DIR = Path.home() / ".orangewall"
+TOKEN_FILE = CONFIG_DIR / "tokens.json"
+
+
+# ============ AUTH ============
+
+def get_cognito_client():
+    return boto3.client("cognito-idp", region_name=COGNITO_REGION)
+
+
+def login(username: str, password: str) -> dict:
+    """Authenticate with Cognito and get tokens."""
+    client = get_cognito_client()
+
+    response = client.initiate_auth(
+        ClientId=COGNITO_CLIENT_ID,
+        AuthFlow="USER_PASSWORD_AUTH",
+        AuthParameters={
+            "USERNAME": username,
+            "PASSWORD": password,
+        },
+    )
+
+    result = response["AuthenticationResult"]
+    tokens = {
+        "access_token": result["AccessToken"],
+        "id_token": result["IdToken"],
+        "refresh_token": result["RefreshToken"],
+        "expires_in": result["ExpiresIn"],
+        "token_type": result["TokenType"],
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+    save_tokens(tokens)
+    return tokens
+
+
+def refresh_tokens() -> dict:
+    """Refresh access token using refresh token."""
+    tokens = load_tokens()
+    if not tokens or "refresh_token" not in tokens:
+        raise Exception("No refresh token. Please login again.")
+
+    client = get_cognito_client()
+
+    response = client.initiate_auth(
+        ClientId=COGNITO_CLIENT_ID,
+        AuthFlow="REFRESH_TOKEN_AUTH",
+        AuthParameters={
+            "REFRESH_TOKEN": tokens["refresh_token"],
+        },
+    )
+
+    result = response["AuthenticationResult"]
+    tokens["access_token"] = result["AccessToken"]
+    tokens["id_token"] = result["IdToken"]
+    tokens["expires_in"] = result["ExpiresIn"]
+    tokens["timestamp"] = datetime.utcnow().isoformat()
+
+    save_tokens(tokens)
+    return tokens
+
+
+def save_tokens(tokens: dict):
+    """Save tokens to config file."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    TOKEN_FILE.write_text(json.dumps(tokens, indent=2))
+    TOKEN_FILE.chmod(0o600)  # Secure permissions
+
+
+def load_tokens() -> dict | None:
+    """Load tokens from config file."""
+    if not TOKEN_FILE.exists():
+        return None
+    return json.loads(TOKEN_FILE.read_text())
+
+
+def get_access_token() -> str:
+    """Get valid access token, refreshing if needed."""
+    tokens = load_tokens()
+    if not tokens:
+        print("Not logged in. Run: orangewall login")
+        sys.exit(1)
+
+    # Check if token might be expired (tokens last 1 hour)
+    timestamp = datetime.fromisoformat(tokens["timestamp"])
+    age_seconds = (datetime.utcnow() - timestamp).total_seconds()
+
+    if age_seconds > tokens.get("expires_in", 3600) - 300:  # Refresh 5 min early
+        try:
+            tokens = refresh_tokens()
+        except Exception as e:
+            print(f"Token refresh failed: {e}")
+            print("Please login again: orangewall login")
+            sys.exit(1)
+
+    return tokens["access_token"]
+
+
+def clear_tokens():
+    """Clear stored tokens (logout)."""
+    if TOKEN_FILE.exists():
+        TOKEN_FILE.unlink()
+
+
+# ============ API ============
+
+def api_get(path):
+    token = get_access_token()
+    r = requests.get(
+        f"{API_URL}/api{path}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def api_post(path, data):
+    token = get_access_token()
+    r = requests.post(
+        f"{API_URL}/api{path}",
+        json=data,
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def api_patch(path, data):
+    token = get_access_token()
+    r = requests.patch(
+        f"{API_URL}/api{path}",
+        json=data,
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def api_delete(path):
+    token = get_access_token()
+    r = requests.delete(
+        f"{API_URL}/api{path}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    r.raise_for_status()
+
+
+# ============ AUTH COMMANDS ============
+
+def cmd_login(args):
+    """Login to Orangewall."""
+    import getpass
+
+    username = args.username or input("Username: ")
+    password = args.password or getpass.getpass("Password: ")
+
+    try:
+        login(username, password)
+        print(f"Logged in as {username}")
+    except Exception as e:
+        print(f"Login failed: {e}")
+        sys.exit(1)
+
+
+def cmd_logout(args):
+    """Logout from Orangewall."""
+    clear_tokens()
+    print("Logged out")
+
+
+def cmd_whoami(args):
+    """Show current user."""
+    tokens = load_tokens()
+    if not tokens:
+        print("Not logged in")
+        return
+
+    # Decode JWT to get username (without verification - just for display)
+    import base64
+    payload = tokens["id_token"].split(".")[1]
+    payload += "=" * (4 - len(payload) % 4)  # Pad base64
+    data = json.loads(base64.urlsafe_b64decode(payload))
+    print(f"Logged in as: {data.get('cognito:username', data.get('email', 'unknown'))}")
+
+
+# ============ GROCERY ============
+
+def grocery_lists(args):
+    """Show all grocery lists."""
+    lists = api_get("/grocery")
+    if not lists:
+        print("No grocery lists yet. Create one with: orangewall grocery create-list 'My List'")
+        return
+    for lst in lists:
+        unchecked = len([i for i in lst.get("items", []) if not i.get("checked")])
+        total = len(lst.get("items", []))
+        print(f"  [{lst['id'][:8]}] {lst['name']} ({unchecked}/{total} remaining)")
+
+
+def grocery_show(args):
+    """Show items in a grocery list."""
+    lists = api_get("/grocery")
+    lst = find_list(lists, args.list)
+    if not lst:
+        print(f"List '{args.list}' not found")
+        return
+
+    print(f"\n{lst['name']}")
+    print("=" * 40)
+
+    items = lst.get("items", [])
+    if not items:
+        print("  (empty)")
+        return
+
+    # Group by category
+    by_cat = {}
+    for item in items:
+        cat = item.get("category", "Other")
+        by_cat.setdefault(cat, []).append(item)
+
+    for cat, cat_items in sorted(by_cat.items()):
+        print(f"\n{cat}:")
+        for item in cat_items:
+            check = "✓" if item.get("checked") else " "
+            qty = f"{item.get('quantity', 1)}"
+            unit = item.get("unit", "")
+            if unit:
+                qty += f" {unit}"
+            print(f"  [{check}] {item['name']} ({qty})")
+
+
+def grocery_add(args):
+    """Add items to a grocery list."""
+    lists = api_get("/grocery")
+    lst = find_list(lists, args.list)
+
+    if not lst:
+        # Auto-create list if doesn't exist
+        print(f"Creating list '{args.list}'...")
+        lst = api_post("/grocery", {"name": args.list, "items": []})
+
+    items = lst.get("items", [])
+
+    for item_name in args.items:
+        new_item = {
+            "id": str(uuid.uuid4()),
+            "name": item_name,
+            "category": args.category or guess_category(item_name),
+            "checked": False,
+            "quantity": args.qty or 1,
+            "unit": args.unit or "",
+        }
+        items.append(new_item)
+        print(f"  + {item_name}")
+
+    api_patch(f"/grocery/{lst['id']}", {"items": items})
+    print(f"Added {len(args.items)} item(s) to '{lst['name']}'")
+
+
+def grocery_check(args):
+    """Check off items from a grocery list."""
+    lists = api_get("/grocery")
+    lst = find_list(lists, args.list)
+    if not lst:
+        print(f"List '{args.list}' not found")
+        return
+
+    items = lst.get("items", [])
+    checked_count = 0
+
+    for item in items:
+        if item["name"].lower() in [i.lower() for i in args.items]:
+            item["checked"] = True
+            checked_count += 1
+            print(f"  ✓ {item['name']}")
+
+    if checked_count:
+        api_patch(f"/grocery/{lst['id']}", {"items": items})
+        print(f"Checked {checked_count} item(s)")
+    else:
+        print("No matching items found")
+
+
+def grocery_uncheck(args):
+    """Uncheck items from a grocery list."""
+    lists = api_get("/grocery")
+    lst = find_list(lists, args.list)
+    if not lst:
+        print(f"List '{args.list}' not found")
+        return
+
+    items = lst.get("items", [])
+    count = 0
+
+    for item in items:
+        if item["name"].lower() in [i.lower() for i in args.items]:
+            item["checked"] = False
+            count += 1
+            print(f"  ☐ {item['name']}")
+
+    if count:
+        api_patch(f"/grocery/{lst['id']}", {"items": items})
+
+
+def grocery_remove(args):
+    """Remove items from a grocery list."""
+    lists = api_get("/grocery")
+    lst = find_list(lists, args.list)
+    if not lst:
+        print(f"List '{args.list}' not found")
+        return
+
+    items = lst.get("items", [])
+    names_lower = [i.lower() for i in args.items]
+
+    new_items = []
+    removed = []
+    for item in items:
+        if item["name"].lower() in names_lower:
+            removed.append(item["name"])
+        else:
+            new_items.append(item)
+
+    if removed:
+        api_patch(f"/grocery/{lst['id']}", {"items": new_items})
+        for name in removed:
+            print(f"  - {name}")
+        print(f"Removed {len(removed)} item(s)")
+    else:
+        print("No matching items found")
+
+
+def grocery_clear(args):
+    """Clear checked items from a list."""
+    lists = api_get("/grocery")
+    lst = find_list(lists, args.list)
+    if not lst:
+        print(f"List '{args.list}' not found")
+        return
+
+    items = lst.get("items", [])
+    new_items = [i for i in items if not i.get("checked")]
+    removed = len(items) - len(new_items)
+
+    if removed:
+        api_patch(f"/grocery/{lst['id']}", {"items": new_items})
+        print(f"Cleared {removed} checked item(s)")
+    else:
+        print("No checked items to clear")
+
+
+def grocery_create_list(args):
+    """Create a new grocery list."""
+    lst = api_post("/grocery", {"name": args.name, "items": []})
+    print(f"Created list '{lst['name']}' [{lst['id'][:8]}]")
+
+
+def grocery_delete_list(args):
+    """Delete a grocery list."""
+    lists = api_get("/grocery")
+    lst = find_list(lists, args.list)
+    if not lst:
+        print(f"List '{args.list}' not found")
+        return
+    api_delete(f"/grocery/{lst['id']}")
+    print(f"Deleted list '{lst['name']}'")
+
+
+def find_list(lists, name):
+    """Find a list by name or ID prefix."""
+    name_lower = name.lower()
+    for lst in lists:
+        if lst["name"].lower() == name_lower or lst["id"].startswith(name):
+            return lst
+    # Fuzzy match
+    for lst in lists:
+        if name_lower in lst["name"].lower():
+            return lst
+    return None
+
+
+def guess_category(item_name):
+    """Guess category based on item name."""
+    name = item_name.lower()
+
+    categories = {
+        "Produce": ["apple", "banana", "orange", "fruit", "berr"],
+        "Vegetables": ["carrot", "broccoli", "lettuce", "onion", "potato", "tomato", "pepper", "celery", "spinach"],
+        "Dairy": ["milk", "cheese", "yogurt", "butter", "cream", "egg"],
+        "Meat & Seafood": ["chicken", "beef", "pork", "fish", "salmon", "shrimp", "bacon", "sausage"],
+        "Bakery": ["bread", "bagel", "muffin", "cake", "pastry", "croissant"],
+        "Beverages": ["juice", "soda", "water", "coffee", "tea", "wine", "beer"],
+        "Frozen": ["ice cream", "frozen", "pizza"],
+        "Health": ["vitamin", "medicine", "supplement"],
+        "Household": ["soap", "detergent", "paper", "tissue", "cleaner"],
+    }
+
+    for cat, keywords in categories.items():
+        if any(kw in name for kw in keywords):
+            return cat
+    return "Other"
+
+
+# ============ MEAL PLANS ============
+
+def meal_plan_list(args):
+    """Show all meal plans."""
+    plans = api_get("/meal-plans")
+    if not plans:
+        print("No meal plans yet. Create one with: orangewall meal-plan create 'Week of Jan 12' --start 2026-01-12")
+        return
+    for plan in plans:
+        days_count = len(plan.get("days", []))
+        print(f"  [{plan['id'][:8]}] {plan['name']} ({days_count} days) - starts {plan.get('startDate', 'N/A')}")
+
+
+def meal_plan_show(args):
+    """Show a meal plan."""
+    plans = api_get("/meal-plans")
+    plan = find_plan(plans, args.plan)
+    if not plan:
+        print(f"Meal plan '{args.plan}' not found")
+        return
+
+    print(f"\n{plan['name']}")
+    print(f"Start: {plan.get('startDate', 'N/A')}")
+    print("=" * 50)
+
+    for day in plan.get("days", []):
+        print(f"\n{day['date']}:")
+        for meal_type in ["breakfast", "lunch", "snack", "dinner"]:
+            meal = day.get(meal_type)
+            if meal:
+                recipe_mark = " [R]" if meal.get("recipeId") else ""
+                notes = f" ({meal['notes']})" if meal.get("notes") else ""
+                print(f"  {meal_type.capitalize():10} {meal['name']}{recipe_mark}{notes}")
+
+
+def meal_plan_create(args):
+    """Create a new meal plan."""
+    plan = api_post("/meal-plans", {
+        "name": args.name,
+        "startDate": args.start,
+        "days": [],
+    })
+    print(f"Created meal plan '{plan['name']}' [{plan['id'][:8]}]")
+    print(f"Start date: {plan['startDate']}")
+    print("\nAdd meals with:")
+    print(f"  orangewall meal-plan add-meal '{args.name}' --date {args.start} --meal breakfast --name 'Oatmeal'")
+
+
+def meal_plan_add_meal(args):
+    """Add or update a meal in a meal plan."""
+    plans = api_get("/meal-plans")
+    plan = find_plan(plans, args.plan)
+    if not plan:
+        print(f"Meal plan '{args.plan}' not found")
+        return
+
+    days = plan.get("days", [])
+
+    # Find or create the day
+    day_entry = None
+    for d in days:
+        if d["date"] == args.date:
+            day_entry = d
+            break
+
+    if not day_entry:
+        day_entry = {"date": args.date}
+        days.append(day_entry)
+
+    # Set the meal
+    meal_entry = {
+        "name": args.name,
+        "recipeId": args.recipe,
+        "notes": args.notes,
+    }
+    day_entry[args.meal] = meal_entry
+
+    # Sort days by date
+    days.sort(key=lambda x: x["date"])
+
+    api_patch(f"/meal-plans/{plan['id']}", {"days": days})
+    print(f"  + {args.date} {args.meal}: {args.name}")
+
+
+def meal_plan_generate_grocery(args):
+    """Generate a grocery list from a meal plan."""
+    plans = api_get("/meal-plans")
+    plan = find_plan(plans, args.plan)
+    if not plan:
+        print(f"Meal plan '{args.plan}' not found")
+        return
+
+    list_name = args.list_name or f"Groceries for {plan['name']}"
+    result = api_post(f"/meal-plans/{plan['id']}/generate-grocery?list_name={list_name}", {})
+
+    print(f"Created grocery list: {result['groceryListName']}")
+    print(f"Items: {result['itemCount']}")
+    print(f"\nView with: orangewall grocery show '{result['groceryListName']}'")
+
+
+def meal_plan_delete(args):
+    """Delete a meal plan."""
+    plans = api_get("/meal-plans")
+    plan = find_plan(plans, args.plan)
+    if not plan:
+        print(f"Meal plan '{args.plan}' not found")
+        return
+    api_delete(f"/meal-plans/{plan['id']}")
+    print(f"Deleted meal plan '{plan['name']}'")
+
+
+def meal_plan_import(args):
+    """Import a meal plan from a text file (like orangerequest.md)."""
+    import re
+    from pathlib import Path
+
+    file_path = Path(args.file)
+    if not file_path.exists():
+        print(f"File not found: {args.file}")
+        return
+
+    content = file_path.read_text()
+
+    # Parse the meal plan
+    plan_name = args.name or f"Imported {datetime.now().strftime('%Y-%m-%d')}"
+    start_date = args.start
+
+    days = []
+    current_day = None
+
+    # Patterns
+    day_pattern = re.compile(r"\*\*(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday).*\*\*")
+    meal_pattern = re.compile(r"^(Breakfast|Lunch|Snack|Dinner):\s*(.+)$", re.IGNORECASE)
+
+    lines = content.split("\n")
+    day_offset = 0
+    day_map = {"sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6}
+
+    for line in lines:
+        line = line.strip()
+
+        # Check for day header
+        day_match = day_pattern.search(line)
+        if day_match:
+            day_name = day_match.group(1).lower()
+            day_offset = day_map.get(day_name, 0)
+
+            # Calculate date from start_date
+            from datetime import timedelta
+            base = datetime.strptime(start_date, "%Y-%m-%d")
+            day_date = (base + timedelta(days=day_offset)).strftime("%Y-%m-%d")
+
+            current_day = {"date": day_date}
+            days.append(current_day)
+            continue
+
+        # Check for meal
+        if current_day:
+            meal_match = meal_pattern.match(line)
+            if meal_match:
+                meal_type = meal_match.group(1).lower()
+                meal_name = meal_match.group(2).strip()
+
+                # Check for notes in parentheses
+                notes = None
+                if "(buy)" in meal_name.lower():
+                    notes = "buy"
+                    meal_name = meal_name.replace("(buy)", "").strip()
+
+                current_day[meal_type] = {
+                    "name": meal_name,
+                    "recipeId": None,
+                    "notes": notes,
+                }
+
+    if not days:
+        print("Could not parse any days from the file")
+        return
+
+    # Create the meal plan
+    plan = api_post("/meal-plans", {
+        "name": plan_name,
+        "startDate": start_date,
+        "days": days,
+    })
+
+    print(f"Imported meal plan: {plan['name']}")
+    print(f"Days: {len(days)}")
+    for day in days:
+        meals = [m for m in ["breakfast", "lunch", "snack", "dinner"] if day.get(m)]
+        print(f"  {day['date']}: {len(meals)} meals")
+
+
+def find_plan(plans, name):
+    """Find a plan by name or ID prefix."""
+    name_lower = name.lower()
+    for plan in plans:
+        if plan["name"].lower() == name_lower or plan["id"].startswith(name):
+            return plan
+    # Fuzzy match
+    for plan in plans:
+        if name_lower in plan["name"].lower():
+            return plan
+    return None
+
+
+# ============ MAIN ============
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="orangewall",
+        description="Orangewall CLI - Manage your personal hub"
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    # === AUTH ===
+    p = subparsers.add_parser("login", help="Login to Orangewall")
+    p.add_argument("-u", "--username", help="Username")
+    p.add_argument("-p", "--password", help="Password")
+
+    subparsers.add_parser("logout", help="Logout from Orangewall")
+    subparsers.add_parser("whoami", help="Show current user")
+
+    # === GROCERY ===
+    grocery = subparsers.add_parser("grocery", aliases=["g"], help="Manage grocery lists")
+    grocery_sub = grocery.add_subparsers(dest="action")
+
+    # grocery lists
+    grocery_sub.add_parser("lists", aliases=["ls"], help="Show all lists")
+
+    # grocery show <list>
+    p = grocery_sub.add_parser("show", aliases=["s"], help="Show items in a list")
+    p.add_argument("list", help="List name")
+
+    # grocery add <items...> --list <list>
+    p = grocery_sub.add_parser("add", aliases=["a"], help="Add items to a list")
+    p.add_argument("items", nargs="+", help="Items to add")
+    p.add_argument("-l", "--list", default="Shopping", help="List name (default: Shopping)")
+    p.add_argument("-c", "--category", help="Category")
+    p.add_argument("-q", "--qty", type=int, help="Quantity")
+    p.add_argument("-u", "--unit", help="Unit (lb, oz, etc)")
+
+    # grocery check <items...> --list <list>
+    p = grocery_sub.add_parser("check", aliases=["c"], help="Check off items")
+    p.add_argument("items", nargs="+", help="Items to check")
+    p.add_argument("-l", "--list", default="Shopping", help="List name")
+
+    # grocery uncheck <items...> --list <list>
+    p = grocery_sub.add_parser("uncheck", help="Uncheck items")
+    p.add_argument("items", nargs="+", help="Items to uncheck")
+    p.add_argument("-l", "--list", default="Shopping", help="List name")
+
+    # grocery remove <items...> --list <list>
+    p = grocery_sub.add_parser("remove", aliases=["rm"], help="Remove items")
+    p.add_argument("items", nargs="+", help="Items to remove")
+    p.add_argument("-l", "--list", default="Shopping", help="List name")
+
+    # grocery clear --list <list>
+    p = grocery_sub.add_parser("clear", help="Clear checked items")
+    p.add_argument("-l", "--list", default="Shopping", help="List name")
+
+    # grocery create-list <name>
+    p = grocery_sub.add_parser("create-list", help="Create a new list")
+    p.add_argument("name", help="List name")
+
+    # grocery delete-list <list>
+    p = grocery_sub.add_parser("delete-list", help="Delete a list")
+    p.add_argument("list", help="List name")
+
+    # === MEAL PLANS ===
+    meal_plan = subparsers.add_parser("meal-plan", aliases=["mp"], help="Manage meal plans")
+    meal_plan_sub = meal_plan.add_subparsers(dest="action")
+
+    # meal-plan list
+    meal_plan_sub.add_parser("list", aliases=["ls"], help="Show all meal plans")
+
+    # meal-plan show <plan>
+    p = meal_plan_sub.add_parser("show", aliases=["s"], help="Show a meal plan")
+    p.add_argument("plan", help="Plan name")
+
+    # meal-plan create <name> --start <date>
+    p = meal_plan_sub.add_parser("create", help="Create a new meal plan")
+    p.add_argument("name", help="Plan name")
+    p.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
+
+    # meal-plan add-meal <plan> --date <date> --meal <type> --name <name>
+    p = meal_plan_sub.add_parser("add-meal", help="Add a meal to a plan")
+    p.add_argument("plan", help="Plan name")
+    p.add_argument("--date", required=True, help="Date (YYYY-MM-DD)")
+    p.add_argument("--meal", required=True, choices=["breakfast", "lunch", "snack", "dinner"], help="Meal type")
+    p.add_argument("--name", required=True, help="Meal name/description")
+    p.add_argument("--recipe", help="Recipe ID to link")
+    p.add_argument("--notes", help="Notes (e.g., 'buy at konbini')")
+
+    # meal-plan generate-grocery <plan>
+    p = meal_plan_sub.add_parser("generate-grocery", aliases=["gg"], help="Generate grocery list from plan")
+    p.add_argument("plan", help="Plan name")
+    p.add_argument("--list-name", help="Name for the grocery list")
+
+    # meal-plan import <file> --start <date>
+    p = meal_plan_sub.add_parser("import", help="Import meal plan from text file")
+    p.add_argument("file", help="File path (e.g., orangerequest.md)")
+    p.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
+    p.add_argument("--name", help="Plan name")
+
+    # meal-plan delete <plan>
+    p = meal_plan_sub.add_parser("delete", help="Delete a meal plan")
+    p.add_argument("plan", help="Plan name")
+
+    args = parser.parse_args()
+
+    # Auth commands
+    if args.command == "login":
+        cmd_login(args)
+    elif args.command == "logout":
+        cmd_logout(args)
+    elif args.command == "whoami":
+        cmd_whoami(args)
+    # Grocery commands
+    elif args.command in ("grocery", "g"):
+        actions = {
+            "lists": grocery_lists, "ls": grocery_lists,
+            "show": grocery_show, "s": grocery_show,
+            "add": grocery_add, "a": grocery_add,
+            "check": grocery_check, "c": grocery_check,
+            "uncheck": grocery_uncheck,
+            "remove": grocery_remove, "rm": grocery_remove,
+            "clear": grocery_clear,
+            "create-list": grocery_create_list,
+            "delete-list": grocery_delete_list,
+        }
+        if args.action in actions:
+            actions[args.action](args)
+        else:
+            grocery_lists(args)  # Default: show lists
+    # Meal plan commands
+    elif args.command in ("meal-plan", "mp"):
+        actions = {
+            "list": meal_plan_list, "ls": meal_plan_list,
+            "show": meal_plan_show, "s": meal_plan_show,
+            "create": meal_plan_create,
+            "add-meal": meal_plan_add_meal,
+            "generate-grocery": meal_plan_generate_grocery, "gg": meal_plan_generate_grocery,
+            "import": meal_plan_import,
+            "delete": meal_plan_delete,
+        }
+        if args.action in actions:
+            actions[args.action](args)
+        else:
+            meal_plan_list(args)  # Default: show plans
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
