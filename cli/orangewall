@@ -622,6 +622,75 @@ def find_plan(plans, name):
     return None
 
 
+# ============ SCHEDULE ============
+
+def schedule_list(args):
+    """Show all schedule blocks."""
+    blocks = api_get("/schedule/blocks")
+    if not blocks:
+        print("No schedule blocks yet. Create one with: orangewall schedule add 'Work' --day Monday --start 10:00 --end 19:00")
+        return
+
+    current_day = None
+    for block in blocks:
+        if block["day"] != current_day:
+            current_day = block["day"]
+            print(f"\n{current_day}:")
+        color_mark = "●" if "green" in block.get("color", "") else "○"
+        print(f"  {color_mark} {block['startTime']} - {block['endTime']}: {block['title']} [{block['id'][:8]}]")
+
+
+def schedule_add(args):
+    """Add a schedule block."""
+    block = api_post("/schedule/blocks", {
+        "title": args.title,
+        "day": args.day,
+        "startTime": args.start,
+        "endTime": args.end,
+        "color": args.color or "bg-blue-500",
+    })
+    print(f"  + {block['day']} {block['startTime']}-{block['endTime']}: {block['title']}")
+
+
+def schedule_add_weekdays(args):
+    """Add a schedule block to all weekdays (Mon-Fri)."""
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    for day in weekdays:
+        block = api_post("/schedule/blocks", {
+            "title": args.title,
+            "day": day,
+            "startTime": args.start,
+            "endTime": args.end,
+            "color": args.color or "bg-blue-500",
+        })
+        print(f"  + {block['day']} {block['startTime']}-{block['endTime']}: {block['title']}")
+    print(f"\nAdded to {len(weekdays)} days")
+
+
+def schedule_delete(args):
+    """Delete a schedule block."""
+    blocks = api_get("/schedule/blocks")
+    # Find by ID prefix
+    for block in blocks:
+        if block["id"].startswith(args.block_id):
+            api_delete(f"/schedule/blocks/{block['id']}")
+            print(f"  - Deleted: {block['day']} {block['startTime']}-{block['endTime']}: {block['title']}")
+            return
+    print(f"Block not found: {args.block_id}")
+
+
+def schedule_clear(args):
+    """Clear all schedule blocks."""
+    blocks = api_get("/schedule/blocks")
+    if not blocks:
+        print("No blocks to clear")
+        return
+    for block in blocks:
+        api_delete(f"/schedule/blocks/{block['id']}")
+        print(f"  - {block['day']} {block['title']}")
+    print(f"\nCleared {len(blocks)} blocks")
+
+
 # ============ MAIN ============
 
 def main():
@@ -725,6 +794,35 @@ def main():
     p = meal_plan_sub.add_parser("delete", help="Delete a meal plan")
     p.add_argument("plan", help="Plan name")
 
+    # === SCHEDULE ===
+    schedule = subparsers.add_parser("schedule", aliases=["s"], help="Manage schedule blocks")
+    schedule_sub = schedule.add_subparsers(dest="action")
+
+    # schedule list
+    schedule_sub.add_parser("list", aliases=["ls"], help="Show all schedule blocks")
+
+    # schedule add <title> --day <day> --start <time> --end <time>
+    p = schedule_sub.add_parser("add", help="Add a schedule block")
+    p.add_argument("title", help="Block title (e.g., 'Work')")
+    p.add_argument("--day", required=True, help="Day (Monday, Tuesday, etc.)")
+    p.add_argument("--start", required=True, help="Start time (HH:MM)")
+    p.add_argument("--end", required=True, help="End time (HH:MM)")
+    p.add_argument("--color", help="Color class (e.g., 'bg-green-500')")
+
+    # schedule add-weekdays <title> --start <time> --end <time>
+    p = schedule_sub.add_parser("add-weekdays", help="Add a block to all weekdays (Mon-Fri)")
+    p.add_argument("title", help="Block title (e.g., 'Work')")
+    p.add_argument("--start", required=True, help="Start time (HH:MM)")
+    p.add_argument("--end", required=True, help="End time (HH:MM)")
+    p.add_argument("--color", help="Color class (e.g., 'bg-green-500')")
+
+    # schedule delete <block_id>
+    p = schedule_sub.add_parser("delete", aliases=["rm"], help="Delete a schedule block")
+    p.add_argument("block_id", help="Block ID (prefix)")
+
+    # schedule clear
+    schedule_sub.add_parser("clear", help="Clear all schedule blocks")
+
     args = parser.parse_args()
 
     # Auth commands
@@ -766,6 +864,19 @@ def main():
             actions[args.action](args)
         else:
             meal_plan_list(args)  # Default: show plans
+    # Schedule commands
+    elif args.command in ("schedule", "s"):
+        actions = {
+            "list": schedule_list, "ls": schedule_list,
+            "add": schedule_add,
+            "add-weekdays": schedule_add_weekdays,
+            "delete": schedule_delete, "rm": schedule_delete,
+            "clear": schedule_clear,
+        }
+        if args.action in actions:
+            actions[args.action](args)
+        else:
+            schedule_list(args)  # Default: show blocks
     else:
         parser.print_help()
 
