@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Plus, Trash2, Copy, Check, ShoppingCart, Calendar, Loader2, X } from "lucide-react"
+import { Plus, Trash2, Copy, Check, ShoppingCart, Calendar, Loader2, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -47,6 +47,7 @@ export function MealsPage() {
   const [newPlanStartDate, setNewPlanStartDate] = useState("")
   const [generatingGrocery, setGeneratingGrocery] = useState(false)
   const [groceryResult, setGroceryResult] = useState<{ name: string; count: number } | null>(null)
+  const [weekOffset, setWeekOffset] = useState(0)
 
   // Select first plan on load
   useEffect(() => {
@@ -55,7 +56,24 @@ export function MealsPage() {
     }
   }, [mealPlans, selectedPlanId])
 
+  // Reset week offset when plan changes
+  useEffect(() => {
+    setWeekOffset(0)
+  }, [selectedPlanId])
+
   const selectedPlan = mealPlans.find(p => p.id === selectedPlanId)
+
+  // Get days for current week view (7 days at a time)
+  const getWeekDays = () => {
+    if (!selectedPlan || selectedPlan.days.length === 0) return []
+    const sortedDays = [...selectedPlan.days].sort((a, b) => a.date.localeCompare(b.date))
+    const startIdx = weekOffset * 7
+    return sortedDays.slice(startIdx, startIdx + 7)
+  }
+
+  const weekDays = getWeekDays()
+  const totalWeeks = selectedPlan ? Math.ceil(selectedPlan.days.length / 7) : 0
+  const currentWeek = weekOffset + 1
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr + "T00:00:00")
@@ -242,33 +260,53 @@ export function MealsPage() {
             )}
           </div>
 
-          {/* Stats */}
-          {selectedPlan && (
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-card border rounded-lg p-4">
-                <p className="text-sm text-muted-foreground">Total Meals</p>
-                <p className="text-2xl font-semibold">{getMealCount()}</p>
+          {/* Week Navigation */}
+          {selectedPlan && totalWeeks > 0 && (
+            <div className="flex items-center justify-between bg-card border rounded-lg p-4">
+              <div className="flex items-center gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Total</p>
+                  <p className="text-lg font-semibold">{getMealCount()} meals / {selectedPlan.days.length} days</p>
+                </div>
               </div>
-              <div className="bg-card border rounded-lg p-4">
-                <p className="text-sm text-muted-foreground">Days Planned</p>
-                <p className="text-2xl font-semibold">{selectedPlan.days.length}</p>
-              </div>
-              <div className="bg-card border rounded-lg p-4">
-                <p className="text-sm text-muted-foreground">Start Date</p>
-                <p className="text-2xl font-semibold">{formatDate(selectedPlan.startDate)}</p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setWeekOffset(prev => prev - 1)}
+                  disabled={weekOffset === 0}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <div className="px-4 text-center min-w-[120px]">
+                  <p className="font-medium">Week {currentWeek} of {totalWeeks}</p>
+                  {weekDays.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(weekDays[0].date)} - {formatDate(weekDays[weekDays.length - 1].date)}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setWeekOffset(prev => prev + 1)}
+                  disabled={weekOffset >= totalWeeks - 1}
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
               </div>
             </div>
           )}
 
           {/* Meal Grid */}
-          {selectedPlan && selectedPlan.days.length > 0 ? (
+          {selectedPlan && weekDays.length > 0 ? (
             <div className="bg-card border rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[800px]">
                   <thead>
                     <tr className="border-b bg-muted/50">
                       <th className="p-3 text-left text-sm font-medium text-muted-foreground w-24">Meal</th>
-                      {selectedPlan.days.map(day => (
+                      {weekDays.map(day => (
                         <th key={day.date} className={`p-3 text-center text-sm font-medium ${isToday(day.date) ? "bg-primary/10" : ""}`}>
                           <div className={isToday(day.date) ? "text-primary" : ""}>{formatDayName(day.date)}</div>
                           <div className={`text-xs font-normal ${isToday(day.date) ? "text-primary/80" : "text-muted-foreground"}`}>
@@ -284,7 +322,7 @@ export function MealsPage() {
                         <td className="p-3 text-sm font-medium text-muted-foreground bg-muted/30 align-top">
                           {mealTypeLabels[mealType]}
                         </td>
-                        {selectedPlan.days.map(day => {
+                        {weekDays.map(day => {
                           const meal = getMeal(day, mealType)
                           const isEditing = editingCell?.date === day.date && editingCell?.meal === mealType
 
